@@ -8,6 +8,13 @@
       "when": 1791542056531,
       "tag": "0000_clean_terrax",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791793593806,
+      "tag": "0001_silent_jack_power",
+      "breakpoints": true
     }
   ]
 }

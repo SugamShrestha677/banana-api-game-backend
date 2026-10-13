@@ -5,7 +5,7 @@ import cookieParser from 'cookie-parser';
 import authRoutes from './routes/authRoutes';
 import passport from 'passport';
 import './config/passport'
-// ... other routes
+import puzzleRoutes from './routes/puzzleRoutes';
 
 const app = express();
 
@@ -15,6 +15,6 @@ app.use(cookieParser());
 app.use(passport.initialize());
 
 app.use('/api/auth', authRoutes);
-// ... other routes
+app.use('/api/puzzles', puzzleRoutes);
 
 export default app;

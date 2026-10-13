@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "high_score" integer DEFAULT 0 NOT NULL;

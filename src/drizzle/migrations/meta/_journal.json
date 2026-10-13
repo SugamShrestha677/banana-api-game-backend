@@ -15,6 +15,13 @@
       "when": 1791793593806,
       "tag": "0001_silent_jack_power",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791857859616,
+      "tag": "0002_dashing_mojo",
+      "breakpoints": true
     }
   ]
 }

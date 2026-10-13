@@ -1,5 +1,5 @@
 // backend/src/db/schema/users.ts
-import { pgTable, uuid, varchar, boolean, timestamp, pgEnum } from 'drizzle-orm/pg-core';
+import { pgTable, integer, uuid, varchar, boolean, timestamp, pgEnum } from 'drizzle-orm/pg-core';
 
 export const userRoleEnum = pgEnum('user_role', ['user', 'admin']);
 
@@ -11,6 +11,7 @@ export const users = pgTable('users', {
   passwordHash: varchar('password_hash', { length: 255 }),
   googleId: varchar('google_id', { length: 255 }).unique(),
   role: userRoleEnum('role').default('user').notNull(),
+  highScore: integer("high_score").notNull().default(0),
   emailVerified: boolean('email_verified').default(false).notNull(),
   avatarUrl: varchar('avatar_url', { length: 512 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

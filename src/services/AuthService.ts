@@ -4,8 +4,8 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { db } from '../drizzle/db';
 import { users } from '../drizzle/schema/users';
-import { refreshTokens } from '../drizzle/schema/auth';
-import { eq } from 'drizzle-orm';
+import { refreshTokens, passwordResetOtps  } from '../drizzle/schema/auth';
+import { eq, and } from 'drizzle-orm';
 
 function httpError(message: string, status: number): Error {
   const err = new Error(message);
@@ -223,4 +223,118 @@ export class AuthService {
     await db.insert(refreshTokens).values({ userId, tokenHash, expiresAt });
     return rawToken; // RAW token returned; hash is what's stored
   }
+
+// ─── FORGOT PASSWORD ─────────────────────────────────
+static async requestPasswordReset(email: string) {
+  if (!email) {
+    throw httpError('Email is required', 400);
+  }
+
+  const user = await db.query.users.findFirst({
+    where: eq(users.email, email),
+  });
+
+  // IMPORTANT: Always respond the same, whether user exists or not.
+  // Prevents user enumeration. Do not throw here.
+  if (!user) return { message: 'If an account exists, an OTP has been sent.' };
+
+  // Invalidate any earlier unused OTPs for this user
+  await db
+    .update(passwordResetOtps)
+    .set({ used: true })
+    .where(
+      and(
+        eq(passwordResetOtps.userId, user.id),
+        eq(passwordResetOtps.used, false)
+      )
+    );
+
+  // Generate a 6-digit OTP (cryptographically random)
+  const otp = String(crypto.randomInt(100_000, 1_000_000));
+  const otpHash = await argon2.hash(otp);
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+  await db.insert(passwordResetOtps).values({
+    userId: user.id,
+    otpHash,
+    expiresAt,
+  });
+
+  // ─── MOCK EMAIL: print OTP to terminal ─────────────
+  console.log('');
+  console.log('╔══════════════════════════════════════════════╗');
+  console.log('║         🍌  BANANA GAME — OTP CODE           ║');
+  console.log('╠══════════════════════════════════════════════╣');
+  console.log(`║  Email: ${email.padEnd(36)}║`);
+  console.log(`║  OTP:   ${otp.padEnd(36)}║`);
+  console.log('║  Expires in: 10 minutes                      ║');
+  console.log('╚══════════════════════════════════════════════╝');
+  console.log('');
+
+  return { message: 'If an account exists, an OTP has been sent.' };
 }
+
+// ─── RESET PASSWORD ──────────────────────────────────
+static async resetPassword(email: string, otp: string, newPassword: string) {
+  if (!email || !otp || !newPassword) {
+    throw httpError('Email, OTP, and new password are required', 400);
+  }
+  if (newPassword.length < 6) {
+    throw httpError('Password must be at least 6 characters', 400);
+  }
+  if (!/^\d{6}$/.test(otp)) {
+    throw httpError('OTP must be 6 digits', 400);
+  }
+
+  const user = await db.query.users.findFirst({
+    where: eq(users.email, email),
+  });
+  // Same generic message regardless of whether user exists
+  if (!user) {
+    throw httpError('Invalid or expired OTP', 400);
+  }
+
+  // Find the most recent unused OTP for this user
+  const record = await db.query.passwordResetOtps.findFirst({
+    where: and(
+      eq(passwordResetOtps.userId, user.id),
+      eq(passwordResetOtps.used, false)
+    ),
+    orderBy: (t, { desc }) => [desc(t.createdAt)],
+  });
+
+  if (!record) throw httpError('Invalid or expired OTP', 400);
+  if (record.expiresAt < new Date()) throw httpError('OTP has expired', 400);
+
+  // Verify OTP against the stored hash
+  const isValid = await argon2.verify(record.otpHash, otp);
+  if (!isValid) throw httpError('Invalid or expired OTP', 400);
+
+  // Everything checks out — apply the changes in a transaction
+  const passwordHash = await argon2.hash(newPassword);
+
+  await db.transaction(async (tx) => {
+    // 1. Update password
+    await tx
+      .update(users)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(eq(users.id, user.id));
+
+    // 2. Mark OTP used
+    await tx
+      .update(passwordResetOtps)
+      .set({ used: true })
+      .where(eq(passwordResetOtps.id, record.id));
+
+    // 3. Revoke ALL refresh tokens for this user → log them out everywhere
+    await tx
+      .update(refreshTokens)
+      .set({ revoked: true })
+      .where(eq(refreshTokens.userId, user.id));
+  });
+
+  return { message: 'Password reset successfully. Please log in again.' };
+}
+
+}
+

@@ -105,4 +105,32 @@ export class AuthController {
       res.redirect('http://localhost:3000/login?error=oauth_failed');
     }
   }
+
+  // ─── FORGOT PASSWORD ─────────────────────────────────
+static async forgotPassword(req: Request, res: Response) {
+  try {
+    const { email } = req.body;
+    const result = await AuthService.requestPasswordReset(email);
+    res.json(result);
+  } catch (error: any) {
+    const status = error?.status ?? 500;
+    const message = error?.status ? error.message : 'Something went wrong. Please try again.';
+    if (!error?.status) console.error('[forgotPassword] Unhandled:', error);
+    return res.status(status).json({ error: message });
+  }
+}
+
+// ─── RESET PASSWORD ──────────────────────────────────
+static async resetPassword(req: Request, res: Response) {
+  try {
+    const { email, otp, newPassword } = req.body;
+    const result = await AuthService.resetPassword(email, otp, newPassword);
+    res.json(result);
+  } catch (error: any) {
+    const status = error?.status ?? 500;
+    const message = error?.status ? error.message : 'Something went wrong. Please try again.';
+    if (!error?.status) console.error('[resetPassword] Unhandled:', error);
+    return res.status(status).json({ error: message });
+  }
+}
 }

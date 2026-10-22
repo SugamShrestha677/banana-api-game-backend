@@ -22,6 +22,13 @@
       "when": 1791857859616,
       "tag": "0002_dashing_mojo",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792681762028,
+      "tag": "0003_fair_the_executioner",
+      "breakpoints": true
     }
   ]
 }

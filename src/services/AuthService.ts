@@ -7,51 +7,134 @@ import { users } from '../drizzle/schema/users';
 import { refreshTokens } from '../drizzle/schema/auth';
 import { eq } from 'drizzle-orm';
 
+function httpError(message: string, status: number): Error {
+  const err = new Error(message);
+  (err as any).status = status;
+  return err;
+}
+
 export class AuthService {
   // ─── REGISTER ────────────────────────────────────────
   static async register(email: string, username: string, password: string) {
-    const passwordHash = await argon2.hash(password);
+    // Input validation
+    if (!email || !email.includes('@')) {
+      throw httpError('A valid email address is required', 400);
+    }
+    if (!username || username.length < 3) {
+      throw httpError('Username must be at least 3 characters', 400);
+    }
+    if (!password || password.length < 6) {
+      throw httpError('Password must be at least 6 characters', 400);
+    }
 
-    const [newUser] = await db
-      .insert(users)
-      .values({ email, username, passwordHash, emailVerified: false })
-      .returning({
-        id: users.id,
-        email: users.email,
-        username: users.username,
-        role: users.role,
-      });
+    try {
+      const passwordHash = await argon2.hash(password);
 
-    const accessToken = this.generateAccessToken(newUser);
-    const refreshToken = await this.generateRefreshToken(newUser.id);
-    return { user: newUser, accessToken, refreshToken };
+      const [newUser] = await db
+        .insert(users)
+        .values({ email, username, passwordHash, emailVerified: false })
+        .returning({
+          id: users.id,
+          email: users.email,
+          username: users.username,
+          role: users.role,
+        });
+
+      const accessToken = this.generateAccessToken(newUser);
+      const refreshToken = await this.generateRefreshToken(newUser.id);
+
+      return { user: newUser, accessToken, refreshToken };
+    } catch (error: any) {
+      const code = error?.code ?? error?.cause?.code;
+      const constraint = error?.constraint ?? error?.cause?.constraint;
+
+      // Unique constraint violations (Postgres 23505)
+      if (code === '23505') {
+        if (constraint === 'users_email_unique') {
+          throw httpError(
+            'This email is already registered. Try logging in, or use Google sign-in if you registered with Google.',
+            409
+          );
+        }
+        if (constraint === 'users_username_unique') {
+          throw httpError(
+            'This username is already taken. Please choose a different one.',
+            409
+          );
+        }
+        if (constraint === 'users_google_id_unique') {
+          throw httpError(
+            'This Google account is already linked to another user.',
+            409
+          );
+        }
+        throw httpError('A duplicate value was submitted', 409);
+      }
+
+      // Other known Postgres errors
+      if (code === '23502') throw httpError('A required field is missing', 400);
+      if (code === '22001') throw httpError('One of your inputs is too long', 400);
+
+      // Anything else — log server-side, return generic message
+      console.error('[register] Unhandled DB error:', error);
+      throw httpError('Could not create your account. Please try again.', 500);
+    }
   }
 
   // ─── LOGIN ───────────────────────────────────────────
   static async login(email: string, password: string) {
-    const user = await db.query.users.findFirst({
-      where: eq(users.email, email),
-    });
+    if (!email || !password) {
+      throw httpError('Email and password are required', 400);
+    }
 
-    // Generic error to prevent user enumeration
-    if (!user || !user.passwordHash) throw new Error('Invalid credentials');
+    // ── 1. DB query (isolated — DB failure ≠ auth failure) ──
+    let user;
+    try {
+      user = await db.query.users.findFirst({
+        where: eq(users.email, email),
+      });
+    } catch (error) {
+      console.error('[login] DB query failed:', error);
+      throw httpError('Could not log you in. Please try again.', 500);
+    }
 
-    const isValid = await argon2.verify(user.passwordHash, password);
-    if (!isValid) throw new Error('Invalid credentials');
+    // ── 2. Auth check (generic message — prevents user enumeration) ──
+    if (!user || !user.passwordHash) {
+      throw httpError('Invalid email or password', 401);
+    }
 
-    const accessToken = this.generateAccessToken(user);
-    const refreshToken = await this.generateRefreshToken(user.id);
+    let isValid = false;
+    try {
+      isValid = await argon2.verify(user.passwordHash, password);
+    } catch (error) {
+      // Corrupted hash in DB — treat as auth failure, log for ops
+      console.error('[login] Hash verification failed:', error);
+      throw httpError('Invalid email or password', 401);
+    }
 
-    return {
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-      },
-      accessToken,
-      refreshToken,
-    };
+    if (!isValid) {
+      throw httpError('Invalid email or password', 401);
+    }
+
+    // ── 3. Token generation (isolated — auth succeeded, session failed) ──
+    try {
+      const accessToken = this.generateAccessToken(user);
+      const refreshToken = await this.generateRefreshToken(user.id);
+
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+        },
+        accessToken,
+        refreshToken,
+      };
+    } catch (error) {
+      console.error('[login] Token generation failed:', error);
+      throw httpError('Could not complete login. Please try again.', 500);
+    }
   }
 
   // ─── LOGOUT ──────────────────────────────────────────

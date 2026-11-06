@@ -7,6 +7,7 @@ import passport from 'passport';
 import './config/passport'
 import puzzleRoutes from './routes/puzzleRoutes';
 // import {userRoutes} from './routes/userRoute'
+import leaderboardRoutes from './routes/leaderboardRoutes';
 import userRoutes from './routes/userRoute';
 const app = express();
 
@@ -18,6 +19,7 @@ app.use(passport.initialize());
 app.use('/api/auth', authRoutes);
 app.use('/api/puzzles', puzzleRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/leaderboard', leaderboardRoutes);
 
 
 export default app;

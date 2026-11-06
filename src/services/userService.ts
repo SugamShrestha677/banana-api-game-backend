@@ -45,4 +45,43 @@ export class UserService {
 
     return { highScore: updated.highScore };
   }
+
+  static async getStats(userId: string) {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+    columns: {
+      id: true,
+      username: true,
+      email: true,
+      role: true,
+      avatarUrl: true,
+      highScore: true,
+      createdAt: true,
+    },
+  });
+  if (!user) throw new Error('User not found');
+
+  // Rank = number of users with strictly higher score + 1
+  let rank: number | null = null;
+  if (user.highScore > 0) {
+    const [{ higherCount }] = await db
+      .select({ higherCount: sql<number>`COUNT(*)` })
+      .from(users)
+      .where(sql`${users.highScore} > ${user.highScore}`);
+    rank = Number(higherCount) + 1;
+  }
+
+  return {
+    user,
+    stats: {
+      // game/answer stats return 0 until server-tracked sessions ship
+      gamesPlayed: 0,
+      totalAnswers: 0,
+      correctAnswers: 0,
+      accuracy: 0,
+      bestStreak: 0,
+      rank,
+    },
+  };
+}
 }

@@ -7,6 +7,7 @@ const router = Router();
 router.use(requireAuth);   // all user routes require auth
 
 router.get('/me', UserController.me);
+router.get('/me/stats', UserController.stats);   
 router.post('/high-score', UserController.updateHighScore);
 
 export default router;

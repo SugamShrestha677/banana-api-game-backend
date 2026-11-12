@@ -36,4 +36,13 @@ export class UserController {
     res.status(500).json({ error: 'Could not load stats.' });
   }
 }
+static async highScores(req: Request, res: Response) {
+  try {
+    const scores = await UserService.getHighScores(req.userId!);
+    res.json(scores);
+  } catch (error) {
+    res.status(500).json({ error: 'Could not load high scores.' });
+  }
 }
+}
+

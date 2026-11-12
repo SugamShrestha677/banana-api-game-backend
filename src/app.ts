@@ -9,6 +9,7 @@ import puzzleRoutes from './routes/puzzleRoutes';
 // import {userRoutes} from './routes/userRoute'
 import leaderboardRoutes from './routes/leaderboardRoutes';
 import userRoutes from './routes/userRoute';
+import gameSessionRoutes from './routes/gameSessionRoutes';
 const app = express();
 
 app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
@@ -20,6 +21,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/puzzles', puzzleRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
+app.use('/api/games', gameSessionRoutes);
 
 
 export default app;

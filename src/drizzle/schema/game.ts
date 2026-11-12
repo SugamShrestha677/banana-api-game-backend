@@ -15,6 +15,7 @@ import { puzzles } from './puzzles';
 // ─── Enums ──────────────────────────────────────────────
 export const gameModeEnum = pgEnum('game_mode', ['classic', 'practice', 'daily']);
 export const gameStatusEnum = pgEnum('game_status', ['in_progress', 'completed', 'abandoned']);
+export const gameDifficultyEnum = pgEnum('game_difficulty', ['easy', 'medium', 'hard']);
 
 // ─── games ──────────────────────────────────────────────
 export const games = pgTable('games', {
@@ -22,6 +23,7 @@ export const games = pgTable('games', {
   // Nullable: allows guest play without an account
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
   mode: gameModeEnum('mode').default('classic').notNull(),
+  difficulty: gameDifficultyEnum('difficulty').default('medium').notNull(),
   score: integer('score').default(0).notNull(),
   lives: integer('lives').default(3).notNull(),
   status: gameStatusEnum('status').default('in_progress').notNull(),

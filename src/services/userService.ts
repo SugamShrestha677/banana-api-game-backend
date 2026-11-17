@@ -1,7 +1,8 @@
 import { db } from '../drizzle/db';
 import { users } from '../drizzle/schema/users';
-import { games } from '../drizzle/schema/game';
+import { games, answers } from '../drizzle/schema/game';
 import { and, eq, sql } from 'drizzle-orm';
+import { AchievementService } from './AchievementService';
 
 type Difficulty = 'easy' | 'medium' | 'hard';
 
@@ -87,16 +88,50 @@ export class UserService {
 
     const highScores = await this.getHighScores(userId);
 
+    // Compute actual stats from DB
+    const [gamesCountRow] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(games)
+      .where(eq(games.userId, userId));
+    const gamesPlayed = Number(gamesCountRow?.count ?? 0);
+
+    const [answersStatsRow] = await db
+      .select({
+        total: sql<number>`COUNT(*)`,
+        correct: sql<number>`COUNT(*) FILTER (WHERE ${answers.isCorrect} = true)`,
+      })
+      .from(answers)
+      .innerJoin(games, eq(answers.gameId, games.id))
+      .where(eq(games.userId, userId));
+
+    const totalAnswers = Number(answersStatsRow?.total ?? 0);
+    const correctAnswers = Number(answersStatsRow?.correct ?? 0);
+    const accuracy = totalAnswers > 0 ? Math.round((correctAnswers / totalAnswers) * 100) : 0;
+
+    // Badges & Achievements
+    let achievementData = null;
+    try {
+      achievementData = await AchievementService.getUserAchievements(userId);
+    } catch (e) {
+      console.error('[userService] getStats achievement error:', e);
+    }
+
     return {
       user,
       stats: {
-        gamesPlayed: 0,
-        totalAnswers: 0,
-        correctAnswers: 0,
-        accuracy: 0,
+        gamesPlayed,
+        totalAnswers,
+        correctAnswers,
+        accuracy,
         bestStreak: 0,
         rank,
         highScores,
+        achievements: achievementData
+          ? {
+              summary: achievementData.summary,
+              recentOwned: achievementData.owned.slice(0, 4),
+            }
+          : undefined,
       },
     };
   }

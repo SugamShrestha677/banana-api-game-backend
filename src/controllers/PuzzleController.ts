@@ -23,7 +23,7 @@ export class PuzzleController {
         return res.status(400).json({ error: 'Answer is required' });
       }
 
-      const result = await PuzzleService.validateAnswer(id, String(answer));
+      const result = await PuzzleService.validateAnswer(String(id), String(answer));
       res.json(result);
     } catch (error) {
       const message = (error as Error).message;

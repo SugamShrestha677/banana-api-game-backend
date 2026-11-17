@@ -151,15 +151,14 @@ export class GameSessionService {
     }
 
     const currentStreak = correct ? previousStreak + 1 : 0;
-    const basePoints = Number(DIFFICULTY_RULES[game.difficulty].pointsPerCorrect);
-    // Streak bonus: +1 point per streak level starting from 2nd correct answer (capped at +5 bonus)
-    const streakBonus = correct && currentStreak > 1 ? Math.min(currentStreak - 1, 5) : 0;
-    const pointsAwarded = correct ? basePoints + streakBonus : 0;
+    // Strict point rules: Easy = 1 pt, Medium = 2 pts, Hard = 3 pts per correct answer
+    const pointsPerCorrect = Number(DIFFICULTY_RULES[game.difficulty].pointsPerCorrect);
+    const pointsAwarded = correct ? pointsPerCorrect : 0;
 
     const currentLives = Number(game.lives);
     const newLives = correct ? currentLives : currentLives - 1;
     const currentScore = Number(game.score) || 0;
-    const newScore = currentScore + Number(pointsAwarded);
+    const newScore = currentScore + pointsAwarded;
     const gameOver = newLives <= 0;
 
     await db.transaction(async (tx) => {
@@ -230,8 +229,6 @@ export class GameSessionService {
       correct,
       correctAnswer: correct ? undefined : puzzle.solution,
       pointsAwarded: Number(pointsAwarded),
-      basePoints: Number(basePoints),
-      streakBonus: Number(streakBonus),
       streak: Number(currentStreak),
       score: Number(newScore),
       lives: Number(newLives),

@@ -29,6 +29,13 @@
       "when": 1792681762028,
       "tag": "0003_fair_the_executioner",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794807490711,
+      "tag": "0004_thick_korg",
+      "breakpoints": true
     }
   ]
 }

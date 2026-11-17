@@ -18,14 +18,15 @@ export class GameSessionController {
   static async submitAnswer(req: Request, res: Response) {
     try {
       const { id } = req.params;   // gameId
-      const { puzzleId, answer } = req.body;
+      const { puzzleId, answer, timeTakenMs } = req.body;
       if (!puzzleId) return res.status(400).json({ error: 'puzzleId is required' });
 
       const result = await GameSessionService.submitAnswer(
         req.userId!,
-        id,
+        String(id),
         puzzleId,
-        String(answer ?? '')
+        String(answer ?? ''),
+        typeof timeTakenMs === 'number' ? timeTakenMs : 0
       );
       res.json(result);
     } catch (error) {
@@ -36,7 +37,7 @@ export class GameSessionController {
   static async end(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      const result = await GameSessionService.endGame(req.userId!, id);
+      const result = await GameSessionService.endGame(req.userId!, String(id));
       res.json(result);
     } catch (error) {
       res.status(400).json({ error: (error as Error).message });

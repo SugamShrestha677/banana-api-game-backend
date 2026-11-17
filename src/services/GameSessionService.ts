@@ -1,8 +1,9 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../drizzle/db';
 import { games, answers } from '../drizzle/schema/game';
 import { puzzles } from '../drizzle/schema/puzzles';
 import { users } from '../drizzle/schema/users';
+import { AchievementService } from './AchievementService';
 
 type Difficulty = 'easy' | 'medium' | 'hard';
 
@@ -103,11 +104,11 @@ export class GameSessionService {
     return {
       gameId: game.id,
       difficulty,
-      lives: rules.lives,
+      lives: Number(rules.lives),
       score: 0,
-      pointsPerCorrect: rules.pointsPerCorrect,
+      pointsPerCorrect: Number(rules.pointsPerCorrect),
       highScores,
-      difficultyBest: highScores[difficulty],
+      difficultyBest: Number(highScores[difficulty] || 0),
     };
   }
 
@@ -115,7 +116,8 @@ export class GameSessionService {
     userId: string,
     gameId: string,
     puzzleId: string,
-    userAnswer: string
+    userAnswer: string,
+    timeTakenMs: number = 0
   ) {
     const game = await db.query.games.findFirst({
       where: and(eq(games.id, gameId), eq(games.userId, userId)),
@@ -131,10 +133,33 @@ export class GameSessionService {
     if (!puzzle) throw new Error('Puzzle not found');
 
     const correct = puzzle.solution.trim() === String(userAnswer).trim();
-    const pointsPerCorrect = DIFFICULTY_RULES[game.difficulty].pointsPerCorrect;
-    const pointsAwarded = correct ? pointsPerCorrect : 0;
-    const newLives = correct ? game.lives : game.lives - 1;
-    const newScore = game.score + pointsAwarded;
+
+    // Calculate current streak from consecutive correct answers in this game session
+    const recentAnswers = await db
+      .select({ isCorrect: answers.isCorrect })
+      .from(answers)
+      .where(eq(answers.gameId, gameId))
+      .orderBy(desc(answers.answeredAt));
+
+    let previousStreak = 0;
+    for (const ans of recentAnswers) {
+      if (ans.isCorrect) {
+        previousStreak++;
+      } else {
+        break;
+      }
+    }
+
+    const currentStreak = correct ? previousStreak + 1 : 0;
+    const basePoints = Number(DIFFICULTY_RULES[game.difficulty].pointsPerCorrect);
+    // Streak bonus: +1 point per streak level starting from 2nd correct answer (capped at +5 bonus)
+    const streakBonus = correct && currentStreak > 1 ? Math.min(currentStreak - 1, 5) : 0;
+    const pointsAwarded = correct ? basePoints + streakBonus : 0;
+
+    const currentLives = Number(game.lives);
+    const newLives = correct ? currentLives : currentLives - 1;
+    const currentScore = Number(game.score) || 0;
+    const newScore = currentScore + Number(pointsAwarded);
     const gameOver = newLives <= 0;
 
     await db.transaction(async (tx) => {
@@ -143,7 +168,7 @@ export class GameSessionService {
         puzzleId,
         userAnswer,
         isCorrect: correct,
-        timeTakenMs: 0,
+        timeTakenMs,
         attemptNumber: 1,
       });
 
@@ -169,13 +194,49 @@ export class GameSessionService {
         .where(eq(users.id, userId));
     }
 
+    // ─── Evaluate Achievements ─────────────────────────────
+    let newlyUnlockedAchievements: any[] = [];
+    try {
+      const answerAchievements = await AchievementService.evaluateAnswerAchievements(
+        userId,
+        gameId,
+        {
+          correct,
+          timeTakenMs,
+          livesRemaining: newLives,
+          difficulty: game.difficulty,
+        }
+      );
+      newlyUnlockedAchievements.push(...answerAchievements);
+
+      if (gameOver) {
+        const endAchievements = await AchievementService.evaluateGameEndAchievements(
+          userId,
+          gameId,
+          {
+            score: newScore,
+            livesRemaining: newLives,
+            initialLives: DIFFICULTY_RULES[game.difficulty].lives,
+            difficulty: game.difficulty,
+          }
+        );
+        newlyUnlockedAchievements.push(...endAchievements);
+      }
+    } catch (err) {
+      console.error('[AchievementEvaluation] Error during submitAnswer:', err);
+    }
+
     return {
       correct,
       correctAnswer: correct ? undefined : puzzle.solution,
-      pointsAwarded,
-      score: newScore,
-      lives: newLives,
+      pointsAwarded: Number(pointsAwarded),
+      basePoints: Number(basePoints),
+      streakBonus: Number(streakBonus),
+      streak: Number(currentStreak),
+      score: Number(newScore),
+      lives: Number(newLives),
       gameOver,
+      newlyUnlockedAchievements,
     };
   }
 
@@ -189,21 +250,41 @@ export class GameSessionService {
 
     const highScores = await this.getHighScoresForUser(userId);
     const difficulty = result.difficulty as Difficulty;
-    const difficultyBest = highScores[difficulty];
+    const difficultyBest = Number(highScores[difficulty] || 0);
 
     const user = await db.query.users.findFirst({
       where: eq(users.id, userId),
       columns: { highScore: true },
     });
 
+    let newlyUnlockedAchievements: any[] = [];
+    try {
+      newlyUnlockedAchievements = await AchievementService.evaluateGameEndAchievements(
+        userId,
+        gameId,
+        {
+          score: Number(result.score),
+          livesRemaining: Number(result.lives),
+          initialLives: DIFFICULTY_RULES[difficulty].lives,
+          difficulty,
+        }
+      );
+    } catch (err) {
+      console.error('[AchievementEvaluation] Error during endGame:', err);
+    }
+
+    const finalScore = Number(result.score);
+    const userHighScore = Number(user?.highScore ?? 0);
+
     return {
-      finalScore: result.score,
+      finalScore,
       difficulty,
       status: result.status,
       highScores,
       difficultyBest,
-      highScore: user?.highScore ?? 0,
-      isNewRecord: result.score > 0 && result.score === difficultyBest,
+      highScore: userHighScore,
+      isNewRecord: finalScore > 0 && finalScore === difficultyBest,
+      newlyUnlockedAchievements,
     };
   }
 }
